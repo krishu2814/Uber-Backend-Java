@@ -55,29 +55,25 @@ Instead of a single monolithic backend, this project is designed using the **Mic
 ---
 
 ## Phase 1: Service Registry (Eureka Server)
+* **Port**: `8761`
+* **Technology**: `spring-cloud-starter-netflix-eureka-server`
+* **Dashboard**: `http://localhost:8761`
+* **Command to run**:
+  ```bash
+  mvn -pl service-registry spring-boot:run
+  ```
 
-### What is Netflix Eureka?
-In a microservices system, you have multiple services running across different ports or servers.
-* **Without Eureka**: Services must hardcode each other's URLs (e.g., `http://localhost:8082`), which breaks easily when scaling or changing ports.
-* **With Eureka**: Every service registers its name on startup (e.g., `DRIVER-SERVICE`). When `ride-service` needs a driver, it asks Eureka for available instances dynamically.
+---
 
-### How to Run the Service Registry
-
-#### Step 1: Compile the project
-From the root `uber-backend` folder:
-```bash
-mvn clean compile
-```
-
-#### Step 2: Start the Service Registry
-```bash
-cd service-registry
-mvn spring-boot:run
-```
-
-#### Step 3: Open the Dashboard
-Open your browser and navigate to:
-```
-http://localhost:8761
-```
-You will see the **Spring Eureka Dashboard** showing system status and all registered microservice instances.
+## Phase 2: API Gateway (Spring Cloud Gateway)
+* **Port**: `8080`
+* **Technology**: `spring-cloud-starter-gateway` + `spring-cloud-starter-netflix-eureka-client`
+* **Purpose**: Single public interface for all mobile and frontend clients. Routes requests dynamically to registered services:
+  * `/api/auth/**` $\rightarrow$ `lb://user-service`
+  * `/api/drivers/**` $\rightarrow$ `lb://driver-service`
+  * `/api/rides/**` $\rightarrow$ `lb://ride-service`
+  * `/api/wallets/**` $\rightarrow$ `lb://payment-service`
+* **Command to run**:
+  ```bash
+  mvn -pl api-gateway spring-boot:run
+  ```

@@ -1,0 +1,63 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      # Enable automatic discovery of services from Eureka
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
+
+      # Global CORS configuration so Postman, web apps, and mobile clients can connect freely
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins: "*"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+            allowedHeaders: "*"
+
+      # Explicit route mappings based on URL paths
+      # "lb://" tells Spring Cloud LoadBalancer to look up the service name in Eureka
+      routes:
+        # Route all authentication and user requests to user-service
+        - id: user-service-route
+          uri: lb://user-service
+          predicates:
+            - Path=/api/auth/**
+
+        # Route driver profile, availability, and location requests to driver-service
+        - id: driver-service-route
+          uri: lb://driver-service
+          predicates:
+            - Path=/api/drivers/**
+
+        # Route ride booking, OTP verification, and trip lifecycle to ride-service
+        - id: ride-service-route
+          uri: lb://ride-service
+          predicates:
+            - Path=/api/rides/**
+
+        # Route wallet balance and payment settlements to payment-service
+        - id: payment-service-route
+          uri: lb://payment-service
+          predicates:
+            - Path=/api/wallets/**
+
+# Eureka Client Configuration
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+    register-with-eureka: true
+    fetch-registry: true
+  instance:
+    prefer-ip-address: true
