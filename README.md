@@ -59,7 +59,7 @@ Instead of a single monolithic backend, this project is designed using the **Mic
 - [x] **Phase 1: Service Registry** (`service-registry` on port `8761`) — Eureka Server initialized & verified.
 - [x] **Phase 2: API Gateway** (`api-gateway` on port `8080`) — Spring Cloud Gateway routing `/api/auth/**`, `/api/drivers/**`, `/api/rides/**`, `/api/wallets/**` via Eureka load balancer.
 - [x] **Phase 3: User & Auth Microservice** (`user-service` on port `8081`) — User & Rider entities, signup, login, validation, and profile retrieval tested end-to-end.
-- [ ] **Phase 4: Driver & Location Microservice** (`driver-service` on port `8082`) — Driver registration, status toggling, and Haversine nearby driver discovery.
+- [x] **Phase 4: Driver & Location Microservice** (`driver-service` on port `8082`) — Driver registration, status toggling, and Haversine nearby driver discovery.
 - [ ] **Phase 5: Ride Booking & Lifecycle Microservice** (`ride-service` on port `8083`) — Ride requesting, fare estimation, OTP verification, and trip state machine.
 - [ ] **Phase 6: Payment & Wallet Microservice** (`payment-service` on port `8084`) — ₹100 bonus on signup, atomic fare deductions, and driver payouts.
 
@@ -99,6 +99,16 @@ mvn clean compile
 * **Command to run**:
   ```bash
   mvn -pl user-service spring-boot:run
+  ```
+
+---
+
+## Phase 4: Driver & Location Service (`driver-service`)
+* **Port**: `8082`
+* **Database**: `driverdb` (In-memory H2 Console at `http://localhost:8082/h2-console`)
+* **Command to run**:
+  ```bash
+  mvn -pl driver-service spring-boot:run
   ```
 
 ---
@@ -269,3 +279,198 @@ You can test these endpoints **directly** on `http://localhost:8081` or **via AP
   ```
 
 > **Tip**: When `service-registry`, `api-gateway`, and `user-service` are running together, replace port `8081` with port `8080` in any of the above commands to test calls routed through the Spring Cloud API Gateway!
+
+---
+
+## Phase 4: Driver & Location Microservice API Testing Guide
+
+All driver endpoints can be tested **directly** on `http://localhost:8082` or **via API Gateway** on `http://localhost:8080`.
+
+### 1. Driver Service Health Check
+* **Endpoint**: `GET /api/drivers/health`
+* **cURL Command**:
+  ```bash
+  curl -s http://localhost:8082/api/drivers/health
+  ```
+* **Expected Response**:
+  ```
+  Driver Service is UP and healthy on port 8082
+  ```
+
+---
+
+### 2. Register Driver Profile & Vehicle
+* **Endpoint**: `POST /api/drivers/register`
+* **cURL Command**:
+  ```bash
+  curl -s -X POST http://localhost:8082/api/drivers/register \
+    -H "Content-Type: application/json" \
+    -d '{
+      "userId": 2,
+      "vehicleNumber": "DL-01-AB-1234",
+      "vehicleModel": "Honda City",
+      "latitude": 28.6139,
+      "longitude": 77.2090
+    }'
+  ```
+* **Expected Response (`201 Created`)**:
+  ```json
+  {
+    "driverId": 1,
+    "userId": 2,
+    "vehicleNumber": "DL-01-AB-1234",
+    "vehicleModel": "Honda City",
+    "status": "AVAILABLE",
+    "latitude": 28.6139,
+    "longitude": 77.209,
+    "rating": 5.0,
+    "message": "Driver registered successfully and is now AVAILABLE"
+  }
+  ```
+
+---
+
+### 3. Update Real-Time GPS Location
+* **Endpoint**: `PUT /api/drivers/{id}/location`
+* **cURL Command**:
+  ```bash
+  curl -s -X PUT http://localhost:8082/api/drivers/1/location \
+    -H "Content-Type: application/json" \
+    -d '{
+      "latitude": 28.6150,
+      "longitude": 77.2100
+    }'
+  ```
+* **Expected Response (`200 OK`)**:
+  ```json
+  {
+    "driverId": 1,
+    "userId": 2,
+    "vehicleNumber": "DL-01-AB-1234",
+    "vehicleModel": "Honda City",
+    "status": "AVAILABLE",
+    "latitude": 28.615,
+    "longitude": 77.21,
+    "rating": 5.0,
+    "message": "Driver location updated successfully"
+  }
+  ```
+
+---
+
+### 4. Update Driver Availability Status
+* **Endpoint**: `PUT /api/drivers/{id}/status?status=BUSY`
+* **cURL Command**:
+  ```bash
+  curl -s -X PUT "http://localhost:8082/api/drivers/1/status?status=BUSY"
+  ```
+* **Expected Response (`200 OK`)**:
+  ```json
+  {
+    "driverId": 1,
+    "userId": 2,
+    "vehicleNumber": "DL-01-AB-1234",
+    "vehicleModel": "Honda City",
+    "status": "BUSY",
+    "latitude": 28.615,
+    "longitude": 77.21,
+    "rating": 5.0,
+    "message": "Driver status changed to BUSY"
+  }
+  ```
+
+---
+
+### 5. Find Nearby Available Drivers (Haversine Geo-Search)
+* **Endpoint**: `GET /api/drivers/nearby?latitude=28.6139&longitude=77.2090&radiusKm=5.0`
+* **cURL Command**:
+  ```bash
+  curl -s "http://localhost:8082/api/drivers/nearby?latitude=28.6139&longitude=77.2090&radiusKm=5.0"
+  ```
+* **Expected Response (`200 OK`)**:
+  ```json
+  [
+    {
+      "driverId": 1,
+      "userId": 2,
+      "vehicleNumber": "DL-01-AB-1234",
+      "vehicleModel": "Honda City",
+      "latitude": 28.615,
+      "longitude": 77.21,
+      "distanceKm": 0.16,
+      "rating": 5.0
+    }
+  ]
+  ```
+
+---
+
+### 6. Get All Available Drivers
+* **Endpoint**: `GET /api/drivers/available`
+* **cURL Command**:
+  ```bash
+  curl -s http://localhost:8082/api/drivers/available
+  ```
+* **Expected Response (`200 OK`)**:
+  ```json
+  [
+    {
+      "driverId": 1,
+      "userId": 2,
+      "vehicleNumber": "DL-01-AB-1234",
+      "vehicleModel": "Honda City",
+      "status": "AVAILABLE",
+      "latitude": 28.6139,
+      "longitude": 77.209,
+      "rating": 5.0,
+      "message": null
+    }
+  ]
+  ```
+
+---
+
+### 7. Get Driver Profile by ID
+* **Endpoint**: `GET /api/drivers/{id}`
+* **cURL Command**:
+  ```bash
+  curl -s http://localhost:8082/api/drivers/1
+  ```
+* **Expected Response (`200 OK`)**:
+  ```json
+  {
+    "driverId": 1,
+    "userId": 2,
+    "vehicleNumber": "DL-01-AB-1234",
+    "vehicleModel": "Honda City",
+    "status": "AVAILABLE",
+    "latitude": 28.6139,
+    "longitude": 77.209,
+    "rating": 5.0,
+    "message": "Driver profile retrieved successfully"
+  }
+  ```
+
+---
+
+### 8. Get Driver Profile by User ID
+* **Endpoint**: `GET /api/drivers/user/{userId}`
+* **cURL Command**:
+  ```bash
+  curl -s http://localhost:8082/api/drivers/user/2
+  ```
+* **Expected Response (`200 OK`)**:
+  ```json
+  {
+    "driverId": 1,
+    "userId": 2,
+    "vehicleNumber": "DL-01-AB-1234",
+    "vehicleModel": "Honda City",
+    "status": "AVAILABLE",
+    "latitude": 28.6139,
+    "longitude": 77.209,
+    "rating": 5.0,
+    "message": "Driver profile retrieved successfully"
+  }
+  ```
+

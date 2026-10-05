@@ -27,6 +27,7 @@
 		<module>service-registry</module>
 		<module>api-gateway</module>
 		<module>user-service</module>
+		<module>driver-service</module>
 	</modules>
 
 	<dependencyManagement>
