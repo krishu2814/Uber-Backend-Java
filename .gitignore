@@ -23,6 +23,11 @@
 target/
 **/target/
 
+# Ignore test directories and scripts
+**/src/test/
+*.sh
+test/
+
 # Eclipse IDE
 .classpath
 .project

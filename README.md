@@ -54,9 +54,28 @@ Instead of a single monolithic backend, this project is designed using the **Mic
 
 ---
 
+## Implementation Progress
+
+- [x] **Phase 1: Service Registry** (`service-registry` on port `8761`) — Eureka Server initialized & verified.
+- [x] **Phase 2: API Gateway** (`api-gateway` on port `8080`) — Spring Cloud Gateway routing `/api/auth/**`, `/api/drivers/**`, `/api/rides/**`, `/api/wallets/**` via Eureka load balancer.
+- [x] **Phase 3: User & Auth Microservice** (`user-service` on port `8081`) — User & Rider entities, signup, login, validation, and profile retrieval tested end-to-end.
+- [ ] **Phase 4: Driver & Location Microservice** (`driver-service` on port `8082`) — Driver registration, status toggling, and Haversine nearby driver discovery.
+- [ ] **Phase 5: Ride Booking & Lifecycle Microservice** (`ride-service` on port `8083`) — Ride requesting, fare estimation, OTP verification, and trip state machine.
+- [ ] **Phase 6: Payment & Wallet Microservice** (`payment-service` on port `8084`) — ₹100 bonus on signup, atomic fare deductions, and driver payouts.
+
+---
+
+## How to Build the Project
+
+From the root directory:
+```bash
+mvn clean compile
+```
+
+---
+
 ## Phase 1: Service Registry (Eureka Server)
 * **Port**: `8761`
-* **Technology**: `spring-cloud-starter-netflix-eureka-server`
 * **Dashboard**: `http://localhost:8761`
 * **Command to run**:
   ```bash
@@ -67,13 +86,186 @@ Instead of a single monolithic backend, this project is designed using the **Mic
 
 ## Phase 2: API Gateway (Spring Cloud Gateway)
 * **Port**: `8080`
-* **Technology**: `spring-cloud-starter-gateway` + `spring-cloud-starter-netflix-eureka-client`
-* **Purpose**: Single public interface for all mobile and frontend clients. Routes requests dynamically to registered services:
-  * `/api/auth/**` $\rightarrow$ `lb://user-service`
-  * `/api/drivers/**` $\rightarrow$ `lb://driver-service`
-  * `/api/rides/**` $\rightarrow$ `lb://ride-service`
-  * `/api/wallets/**` $\rightarrow$ `lb://payment-service`
 * **Command to run**:
   ```bash
   mvn -pl api-gateway spring-boot:run
   ```
+
+---
+
+## Phase 3: User & Auth Service (`user-service`)
+* **Port**: `8081`
+* **Database**: `userdb` (In-memory H2 Console at `http://localhost:8081/h2-console`)
+* **Command to run**:
+  ```bash
+  mvn -pl user-service spring-boot:run
+  ```
+
+---
+
+## Local API Testing & Routes Guide
+
+You can test these endpoints **directly** on `http://localhost:8081` or **via API Gateway** on `http://localhost:8080`.
+
+### 1. Health Check
+* **Endpoint**: `GET /api/auth/health`
+* **cURL Command**:
+  ```bash
+  curl -s http://localhost:8081/api/auth/health
+  ```
+* **Expected Response**:
+  ```
+  User Service is UP and healthy on port 8081
+  ```
+
+---
+
+### 2. Register a Rider
+* **Endpoint**: `POST /api/auth/register-rider`
+* **cURL Command**:
+  ```bash
+  curl -s -X POST http://localhost:8081/api/auth/register-rider \
+    -H "Content-Type: application/json" \
+    -d '{
+      "name": "Rahul Sharma",
+      "email": "rahul@example.com",
+      "password": "password123",
+      "phone": "9876543210",
+      "role": "RIDER"
+    }'
+  ```
+* **Expected Response (`201 Created`)**:
+  ```json
+  {
+    "userId": 1,
+    "riderId": 1,
+    "name": "Rahul Sharma",
+    "email": "rahul@example.com",
+    "phone": "9876543210",
+    "role": "RIDER",
+    "message": "Rider registered successfully"
+  }
+  ```
+
+---
+
+### 3. Register a Driver User Account
+* **Endpoint**: `POST /api/auth/register-driver`
+* **cURL Command**:
+  ```bash
+  curl -s -X POST http://localhost:8081/api/auth/register-driver \
+    -H "Content-Type: application/json" \
+    -d '{
+      "name": "Amit Kumar",
+      "email": "amit@example.com",
+      "password": "password123",
+      "phone": "9876543211",
+      "role": "DRIVER"
+    }'
+  ```
+* **Expected Response (`201 Created`)**:
+  ```json
+  {
+    "userId": 2,
+    "riderId": null,
+    "name": "Amit Kumar",
+    "email": "amit@example.com",
+    "phone": "9876543211",
+    "role": "DRIVER",
+    "message": "Driver user account created successfully"
+  }
+  ```
+
+---
+
+### 4. User Login
+* **Endpoint**: `POST /api/auth/login`
+* **cURL Command**:
+  ```bash
+  curl -s -X POST http://localhost:8081/api/auth/login \
+    -H "Content-Type: application/json" \
+    -d '{
+      "email": "rahul@example.com",
+      "password": "password123"
+    }'
+  ```
+* **Expected Response (`200 OK`)**:
+  ```json
+  {
+    "userId": 1,
+    "riderId": 1,
+    "name": "Rahul Sharma",
+    "email": "rahul@example.com",
+    "phone": "9876543210",
+    "role": "RIDER",
+    "message": "Login successful"
+  }
+  ```
+
+---
+
+### 5. Duplicate Email Validation (Error Handling Test)
+* **Endpoint**: `POST /api/auth/register-rider` (with already registered email)
+* **cURL Command**:
+  ```bash
+  curl -s -X POST http://localhost:8081/api/auth/register-rider \
+    -H "Content-Type: application/json" \
+    -d '{
+      "name": "Rahul Duplicate",
+      "email": "rahul@example.com",
+      "password": "password123",
+      "phone": "9999999999",
+      "role": "RIDER"
+    }'
+  ```
+* **Expected Response (`400 Bad Request`)**:
+  ```json
+  {
+    "timestamp": "2026-10-04T21:11:35.249996",
+    "status": 400,
+    "error": "Bad Request",
+    "message": "An account with email rahul@example.com already exists"
+  }
+  ```
+
+---
+
+### 6. Get User Details by ID
+* **Endpoint**: `GET /api/auth/users/{userId}`
+* **cURL Command**:
+  ```bash
+  curl -s http://localhost:8081/api/auth/users/1
+  ```
+* **Expected Response (`200 OK`)**:
+  ```json
+  {
+    "id": 1,
+    "name": "Rahul Sharma",
+    "email": "rahul@example.com",
+    "phone": "9876543210",
+    "role": "RIDER",
+    "createdAt": "2026-10-04T21:11:21.123456"
+  }
+  ```
+
+---
+
+### 7. Get Rider Profile by User ID
+* **Endpoint**: `GET /api/auth/riders/user/{userId}`
+* **cURL Command**:
+  ```bash
+  curl -s http://localhost:8081/api/auth/riders/user/1
+  ```
+* **Expected Response (`200 OK`)**:
+  ```json
+  {
+    "riderId": 1,
+    "userId": 1,
+    "name": "Rahul Sharma",
+    "email": "rahul@example.com",
+    "phone": "9876543210",
+    "rating": 5.0
+  }
+  ```
+
+> **Tip**: When `service-registry`, `api-gateway`, and `user-service` are running together, replace port `8081` with port `8080` in any of the above commands to test calls routed through the Spring Cloud API Gateway!

@@ -26,6 +26,7 @@
 	<modules>
 		<module>service-registry</module>
 		<module>api-gateway</module>
+		<module>user-service</module>
 	</modules>
 
 	<dependencyManagement>
