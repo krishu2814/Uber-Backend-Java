@@ -60,7 +60,7 @@ Instead of a single monolithic backend, this project is designed using the **Mic
 - [x] **Phase 2: API Gateway** (`api-gateway` on port `8080`) — Spring Cloud Gateway routing `/api/auth/**`, `/api/drivers/**`, `/api/rides/**`, `/api/wallets/**` via Eureka load balancer.
 - [x] **Phase 3: User & Auth Microservice** (`user-service` on port `8081`) — User & Rider entities, signup, login, validation, and profile retrieval tested end-to-end.
 - [x] **Phase 4: Driver & Location Microservice** (`driver-service` on port `8082`) — Driver registration, status toggling, and Haversine nearby driver discovery.
-- [ ] **Phase 5: Ride Booking & Lifecycle Microservice** (`ride-service` on port `8083`) — Ride requesting, fare estimation, OTP verification, and trip state machine.
+- [x] **Phase 5: Ride Booking & Lifecycle Microservice** (`ride-service` on port `8083`) — Ride requesting, fare estimation, OTP verification, and trip state machine.
 - [ ] **Phase 6: Payment & Wallet Microservice** (`payment-service` on port `8084`) — ₹100 bonus on signup, atomic fare deductions, and driver payouts.
 
 ---
@@ -109,6 +109,16 @@ mvn clean compile
 * **Command to run**:
   ```bash
   mvn -pl driver-service spring-boot:run
+  ```
+
+---
+
+## Phase 5: Ride & Booking Service (`ride-service`)
+* **Port**: `8083`
+* **Database**: `ridedb` (In-memory H2 Console at `http://localhost:8083/h2-console`)
+* **Command to run**:
+  ```bash
+  mvn -pl ride-service spring-boot:run
   ```
 
 ---
@@ -473,4 +483,168 @@ All driver endpoints can be tested **directly** on `http://localhost:8082` or **
     "message": "Driver profile retrieved successfully"
   }
   ```
+
+---
+
+## Phase 5: Ride & Booking Microservice API Testing Guide
+
+All ride booking, OTP verification, and trip lifecycle endpoints can be tested **directly** on `http://localhost:8083` or **via API Gateway** on `http://localhost:8080`.
+
+### 1. Ride Service Health Check
+* **Endpoint**: `GET /api/rides/health`
+* **cURL Command**:
+  ```bash
+  curl -s http://localhost:8083/api/rides/health
+  ```
+* **Expected Response**:
+  ```
+  Ride Service is UP and healthy on port 8083
+  ```
+
+---
+
+### 2. Request a Ride (Booking Engine + 4-Digit OTP)
+* **Endpoint**: `POST /api/rides/request`
+* **cURL Command**:
+  ```bash
+  curl -s -X POST http://localhost:8083/api/rides/request \
+    -H "Content-Type: application/json" \
+    -d '{
+      "riderId": 1,
+      "pickupAddress": "Connaught Place, New Delhi",
+      "dropoffAddress": "India Gate, New Delhi",
+      "pickupLatitude": 28.6315,
+      "pickupLongitude": 77.2167,
+      "dropoffLatitude": 28.6129,
+      "dropoffLongitude": 77.2295,
+      "surgeMultiplier": 1.0
+    }'
+  ```
+* **Expected Response (`201 Created`)**:
+  ```json
+  {
+    "rideId": 1,
+    "riderId": 1,
+    "driverId": null,
+    "pickupAddress": "Connaught Place, New Delhi",
+    "dropoffAddress": "India Gate, New Delhi",
+    "pickupLatitude": 28.6315,
+    "pickupLongitude": 77.2167,
+    "dropoffLatitude": 28.6129,
+    "dropoffLongitude": 77.2295,
+    "distanceKm": 2.41,
+    "fare": 78.92,
+    "otp": "4829",
+    "status": "REQUESTED",
+    "paymentStatus": "PENDING",
+    "message": "Ride requested successfully! Waiting for a nearby driver to accept."
+  }
+  ```
+
+---
+
+### 3. Driver Accepts Ride (Atomic Concurrency Protection)
+* **Endpoint**: `POST /api/rides/{id}/accept?driverId={driverId}`
+* **cURL Command**:
+  ```bash
+  curl -s -X POST "http://localhost:8083/api/rides/1/accept?driverId=1"
+  ```
+* **Expected Response (`200 OK`)**:
+  ```json
+  {
+    "rideId": 1,
+    "riderId": 1,
+    "driverId": 1,
+    "status": "ACCEPTED",
+    "message": "Ride accepted successfully! Driver is on the way to the pickup location."
+  }
+  ```
+
+---
+
+### 4. Concurrency Safety Test (Second Driver Attempts Acceptance)
+* **Endpoint**: `POST /api/rides/{id}/accept?driverId={anotherDriverId}`
+* **cURL Command**:
+  ```bash
+  curl -s -X POST "http://localhost:8083/api/rides/1/accept?driverId=2"
+  ```
+* **Expected Response (`400 Bad Request`)**:
+  ```json
+  {
+    "status": 400,
+    "error": "Bad Request",
+    "message": "Ride request #1 is no longer available. Current status: ACCEPTED"
+  }
+  ```
+
+---
+
+### 5. Driver Marks Arrival at Pickup Point
+* **Endpoint**: `POST /api/rides/{id}/arrive?driverId={driverId}`
+* **cURL Command**:
+  ```bash
+  curl -s -X POST "http://localhost:8083/api/rides/1/arrive?driverId=1"
+  ```
+* **Expected Response (`200 OK`)**:
+  ```json
+  {
+    "rideId": 1,
+    "status": "ARRIVED",
+    "message": "Driver has arrived at the pickup location. Waiting for rider to board."
+  }
+  ```
+
+---
+
+### 6. Driver Enters Rider's OTP and Starts Trip
+* **Endpoint**: `POST /api/rides/{id}/start?driverId={driverId}&otp={otp}`
+* **cURL Command**:
+  ```bash
+  curl -s -X POST "http://localhost:8083/api/rides/1/start?driverId=1&otp=4829"
+  ```
+* **Expected Response (`200 OK`)**:
+  ```json
+  {
+    "rideId": 1,
+    "status": "STARTED",
+    "message": "OTP verified successfully! Trip has started."
+  }
+  ```
+
+---
+
+### 7. End Trip and Release Driver
+* **Endpoint**: `POST /api/rides/{id}/end?driverId={driverId}`
+* **cURL Command**:
+  ```bash
+  curl -s -X POST "http://localhost:8083/api/rides/1/end?driverId=1"
+  ```
+* **Expected Response (`200 OK`)**:
+  ```json
+  {
+    "rideId": 1,
+    "status": "COMPLETED",
+    "fare": 78.92,
+    "message": "Trip completed safely! Total fare is ₹78.92"
+  }
+  ```
+
+---
+
+### 8. Get Ride Details by ID
+* **Endpoint**: `GET /api/rides/{id}`
+* **cURL Command**:
+  ```bash
+  curl -s http://localhost:8083/api/rides/1
+  ```
+
+---
+
+### 9. Get Pending Rides in Dispatch Queue
+* **Endpoint**: `GET /api/rides/pending`
+* **cURL Command**:
+  ```bash
+  curl -s http://localhost:8083/api/rides/pending
+  ```
+
 

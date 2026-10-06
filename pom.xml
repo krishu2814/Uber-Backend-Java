@@ -28,6 +28,7 @@
 		<module>api-gateway</module>
 		<module>user-service</module>
 		<module>driver-service</module>
+		<module>ride-service</module>
 	</modules>
 
 	<dependencyManagement>
