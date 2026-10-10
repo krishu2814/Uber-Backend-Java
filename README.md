@@ -61,7 +61,7 @@ Instead of a single monolithic backend, this project is designed using the **Mic
 - [x] **Phase 3: User & Auth Microservice** (`user-service` on port `8081`) — User & Rider entities, signup, login, validation, and profile retrieval tested end-to-end.
 - [x] **Phase 4: Driver & Location Microservice** (`driver-service` on port `8082`) — Driver registration, status toggling, and Haversine nearby driver discovery.
 - [x] **Phase 5: Ride Booking & Lifecycle Microservice** (`ride-service` on port `8083`) — Ride requesting, fare estimation, OTP verification, and trip state machine.
-- [ ] **Phase 6: Payment & Wallet Microservice** (`payment-service` on port `8084`) — ₹100 bonus on signup, atomic fare deductions, and driver payouts.
+- [x] **Phase 6: Payment & Wallet Microservice** (`payment-service` on port `8084`) — ₹100 Welcome Bonus on signup, atomic double-entry fare settlements, top-up, and immutable audit ledgering.
 
 ---
 
@@ -119,6 +119,16 @@ mvn clean compile
 * **Command to run**:
   ```bash
   mvn -pl ride-service spring-boot:run
+  ```
+
+---
+
+## Phase 6: Payment & Wallet Service (`payment-service`)
+* **Port**: `8084`
+* **Database**: `paymentdb` (In-memory H2 Console at `http://localhost:8084/h2-console`)
+* **Command to run**:
+  ```bash
+  mvn -pl payment-service spring-boot:run
   ```
 
 ---
@@ -646,5 +656,231 @@ All ride booking, OTP verification, and trip lifecycle endpoints can be tested *
   ```bash
   curl -s http://localhost:8083/api/rides/pending
   ```
+
+---
+
+## Phase 6: Payment & Digital Wallet Microservice API Testing Guide
+
+All wallet, balance top-up, double-entry settlement, and transaction audit ledger endpoints can be tested **directly** on `http://localhost:8084` or **via API Gateway** on `http://localhost:8080`.
+
+### 1. Payment Service Health Check
+* **Endpoint**: `GET /api/wallets/health`
+* **cURL Command**:
+  ```bash
+  curl -s http://localhost:8084/api/wallets/health
+  ```
+* **Expected Response**:
+  ```
+  Payment & Digital Wallet Service is UP and running on port 8084
+  ```
+
+---
+
+### 2. Create Digital Wallet (with ₹100 Welcome Bonus)
+* **Endpoint**: `POST /api/wallets/create?userId={userId}`
+* **cURL Command**:
+  ```bash
+  curl -s -X POST "http://localhost:8084/api/wallets/create?userId=1"
+  ```
+* **Expected Response (`201 Created`)**:
+  ```json
+  {
+    "walletId": 1,
+    "userId": 1,
+    "balance": 100.0,
+    "createdAt": "2026-10-11T01:29:01.895308",
+    "message": "Wallet created successfully with ₹100 Welcome Bonus!"
+  }
+  ```
+
+---
+
+### 3. Fetch Wallet Details by User ID
+* **Endpoint**: `GET /api/wallets/user/{userId}`
+* **cURL Command**:
+  ```bash
+  curl -s http://localhost:8084/api/wallets/user/1
+  ```
+* **Expected Response (`200 OK`)**:
+  ```json
+  {
+    "walletId": 1,
+    "userId": 1,
+    "balance": 100.0,
+    "createdAt": "2026-10-11T01:29:01.895308",
+    "message": "Wallet retrieved successfully"
+  }
+  ```
+
+---
+
+### 4. Duplicate Wallet Prevention (Idempotent Check)
+* **Endpoint**: `POST /api/wallets/create?userId=1` (same user ID)
+* **cURL Command**:
+  ```bash
+  curl -s -X POST "http://localhost:8084/api/wallets/create?userId=1"
+  ```
+* **Expected Response (`201 Created`)**:
+  ```json
+  {
+    "walletId": 1,
+    "userId": 1,
+    "balance": 100.0,
+    "createdAt": "2026-10-11T01:29:01.895308",
+    "message": "Wallet is already active for user ID: 1"
+  }
+  ```
+
+---
+
+### 5. Add Money (Top-Up Digital Balance)
+* **Endpoint**: `POST /api/wallets/add-money`
+* **cURL Command**:
+  ```bash
+  curl -s -X POST http://localhost:8084/api/wallets/add-money \
+    -H "Content-Type: application/json" \
+    -d '{
+      "userId": 1,
+      "amount": 250.0
+    }'
+  ```
+* **Expected Response (`200 OK`)**:
+  ```json
+  {
+    "walletId": 1,
+    "userId": 1,
+    "balance": 350.0,
+    "createdAt": "2026-10-11T01:29:01.895308",
+    "message": "Added ₹250.0 successfully. New balance: ₹350.0"
+  }
+  ```
+
+---
+
+### 6. Create Driver Wallet
+* **Endpoint**: `POST /api/wallets/create?userId=2`
+* **cURL Command**:
+  ```bash
+  curl -s -X POST "http://localhost:8084/api/wallets/create?userId=2"
+  ```
+* **Expected Response (`201 Created`)**:
+  ```json
+  {
+    "walletId": 2,
+    "userId": 2,
+    "balance": 100.0,
+    "createdAt": "2026-10-11T01:29:16.580405",
+    "message": "Wallet created successfully with ₹100 Welcome Bonus!"
+  }
+  ```
+
+---
+
+### 7. Atomic Double-Entry Ride Fare Settlement
+* **Endpoint**: `POST /api/wallets/settle-ride`
+* **cURL Command**:
+  ```bash
+  curl -s -X POST http://localhost:8084/api/wallets/settle-ride \
+    -H "Content-Type: application/json" \
+    -d '{
+      "rideId": 101,
+      "riderUserId": 1,
+      "driverUserId": 2,
+      "fareAmount": 125.50
+    }'
+  ```
+* **Expected Response (`200 OK`)**:
+  ```json
+  {
+    "rideId": 101,
+    "fareAmount": 125.5,
+    "riderUserId": 1,
+    "riderRemainingBalance": 224.5,
+    "driverUserId": 2,
+    "driverNewBalance": 225.5,
+    "status": "SUCCESS",
+    "message": "Ride #101 fare of ₹125.5 settled successfully via digital wallet."
+  }
+  ```
+
+---
+
+### 8. Insufficient Balance Validation Error
+* **Endpoint**: `POST /api/wallets/settle-ride` (fare exceeds available rider balance)
+* **cURL Command**:
+  ```bash
+  curl -s -X POST http://localhost:8084/api/wallets/settle-ride \
+    -H "Content-Type: application/json" \
+    -d '{
+      "rideId": 102,
+      "riderUserId": 1,
+      "driverUserId": 2,
+      "fareAmount": 500.0
+    }'
+  ```
+* **Expected Response (`400 Bad Request`)**:
+  ```json
+  {
+    "timestamp": "2026-10-11T01:29:30.253442",
+    "status": 400,
+    "error": "Bad Request",
+    "message": "Insufficient balance in rider wallet. Available: ₹224.5, Required: ₹500.0. Please add money to wallet."
+  }
+  ```
+
+---
+
+### 9. Retrieve Immutable Transaction Ledger History
+* **Endpoint**: `GET /api/wallets/user/{userId}/transactions`
+* **cURL Command**:
+  ```bash
+  curl -s http://localhost:8084/api/wallets/user/1/transactions
+  ```
+* **Expected Response (`200 OK`)**:
+  ```json
+  [
+    {
+      "transactionId": 4,
+      "walletId": 1,
+      "rideId": 101,
+      "amount": 125.5,
+      "type": "DEBIT",
+      "description": "Trip Fare Paid for Ride #101",
+      "balanceAfter": 224.5,
+      "timestamp": "2026-10-11T01:29:21.005234"
+    },
+    {
+      "transactionId": 2,
+      "walletId": 1,
+      "rideId": null,
+      "amount": 250.0,
+      "type": "CREDIT",
+      "description": "Wallet Top-up",
+      "balanceAfter": 350.0,
+      "timestamp": "2026-10-11T01:29:13.187137"
+    },
+    {
+      "transactionId": 1,
+      "walletId": 1,
+      "rideId": null,
+      "amount": 100.0,
+      "type": "CREDIT",
+      "description": "Welcome Bonus Credit",
+      "balanceAfter": 100.0,
+      "timestamp": "2026-10-11T01:29:01.909799"
+    }
+  ]
+  ```
+
+---
+
+### 10. Call via API Gateway (Port 8080)
+When `service-registry`, `api-gateway`, and `payment-service` are running:
+* **cURL Command**:
+  ```bash
+  curl -s http://localhost:8080/api/wallets/user/1
+  ```
+* **Expected Response**: Routed seamlessly through Spring Cloud Gateway to `payment-service`.
+
 
 
