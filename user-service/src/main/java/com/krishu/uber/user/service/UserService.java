@@ -23,4 +23,7 @@ public interface UserService {
 
     // Get rider profile by user ID
     RiderDto getRiderByUserId(Long userId);
+
+    // Get rider profile by rider ID
+    RiderDto getRiderById(Long riderId);
 }

@@ -63,4 +63,11 @@ public class AuthController {
         RiderDto rider = userService.getRiderByUserId(userId);
         return ResponseEntity.ok(rider);
     }
+
+    // Get rider profile by rider ID
+    @GetMapping("/riders/{riderId}")
+    public ResponseEntity<RiderDto> getRiderById(@PathVariable Long riderId) {
+        RiderDto rider = userService.getRiderById(riderId);
+        return ResponseEntity.ok(rider);
+    }
 }

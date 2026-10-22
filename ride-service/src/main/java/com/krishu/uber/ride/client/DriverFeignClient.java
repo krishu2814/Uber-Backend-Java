@@ -1,5 +1,6 @@
 package com.krishu.uber.ride.client;
 
+import com.krishu.uber.ride.dto.DriverDto;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -20,5 +21,5 @@ public interface DriverFeignClient {
 
     // Get driver details by driver ID
     @GetMapping("/api/drivers/{id}")
-    ResponseEntity<Object> getDriverById(@PathVariable("id") Long driverId);
+    DriverDto getDriverById(@PathVariable("id") Long driverId);
 }

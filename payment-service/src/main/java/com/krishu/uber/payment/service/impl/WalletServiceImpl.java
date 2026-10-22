@@ -142,20 +142,41 @@ public class WalletServiceImpl implements WalletService {
         );
         walletTransactionRepository.save(riderDebitTx);
 
-        // 5. Credit Fare to Driver
-        double driverNewBalance = round(driverWallet.getBalance() + fare);
+        // 5. Driver Earnings (80%) and Platform Commission (20%)
+        double driverEarnings = round(fare * 0.80);
+        double platformCommission = round(fare - driverEarnings);
+
+        // Credit 80% driver earnings
+        double driverNewBalance = round(driverWallet.getBalance() + driverEarnings);
         driverWallet.setBalance(driverNewBalance);
         walletRepository.save(driverWallet);
 
         WalletTransaction driverCreditTx = new WalletTransaction(
                 driverWallet.getId(),
                 request.getRideId(),
-                fare,
+                driverEarnings,
                 TransactionType.CREDIT,
-                "Trip Fare Received for Ride #" + request.getRideId(),
+                "Trip Earnings (80% of ₹" + fare + ") for Ride #" + request.getRideId(),
                 driverNewBalance
         );
         walletTransactionRepository.save(driverCreditTx);
+
+        // Credit 20% commission to Platform Revenue Wallet (userId = 0)
+        Wallet platformWallet = walletRepository.findByUserId(0L)
+                .orElseGet(() -> walletRepository.save(new Wallet(0L, 0.0)));
+        double platformNewBalance = round(platformWallet.getBalance() + platformCommission);
+        platformWallet.setBalance(platformNewBalance);
+        walletRepository.save(platformWallet);
+
+        WalletTransaction platformCreditTx = new WalletTransaction(
+                platformWallet.getId(),
+                request.getRideId(),
+                platformCommission,
+                TransactionType.CREDIT,
+                "Platform Commission (20% of ₹" + fare + ") for Ride #" + request.getRideId(),
+                platformNewBalance
+        );
+        walletTransactionRepository.save(platformCreditTx);
 
         return new SettlementResponseDto(
                 request.getRideId(),
@@ -165,7 +186,7 @@ public class WalletServiceImpl implements WalletService {
                 request.getDriverUserId(),
                 driverNewBalance,
                 "SUCCESS",
-                "Ride #" + request.getRideId() + " fare of ₹" + fare + " settled successfully via digital wallet."
+                "Ride #" + request.getRideId() + " fare of ₹" + fare + " settled successfully (₹" + driverEarnings + " to driver, ₹" + platformCommission + " platform commission)."
         );
     }
 

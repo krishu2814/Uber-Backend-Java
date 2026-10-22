@@ -1,9 +1,11 @@
 package com.krishu.uber.ride.service.impl;
 
 import com.krishu.uber.ride.client.DriverFeignClient;
-import com.krishu.uber.ride.dto.RideRequestDto;
-import com.krishu.uber.ride.dto.RideResponseDto;
+import com.krishu.uber.ride.client.PaymentFeignClient;
+import com.krishu.uber.ride.client.UserFeignClient;
+import com.krishu.uber.ride.dto.*;
 import com.krishu.uber.ride.entity.Ride;
+import com.krishu.uber.ride.enums.PaymentStatus;
 import com.krishu.uber.ride.enums.RideStatus;
 import com.krishu.uber.ride.exception.BadRequestException;
 import com.krishu.uber.ride.exception.ResourceNotFoundException;
@@ -24,12 +26,19 @@ public class RideServiceImpl implements RideService {
 
     private final RideRepository rideRepository;
     private final DriverFeignClient driverFeignClient;
+    private final PaymentFeignClient paymentFeignClient;
+    private final UserFeignClient userFeignClient;
     private final Random random = new Random();
 
     // Standard constructor injection
-    public RideServiceImpl(RideRepository rideRepository, DriverFeignClient driverFeignClient) {
+    public RideServiceImpl(RideRepository rideRepository,
+                           DriverFeignClient driverFeignClient,
+                           PaymentFeignClient paymentFeignClient,
+                           UserFeignClient userFeignClient) {
         this.rideRepository = rideRepository;
         this.driverFeignClient = driverFeignClient;
+        this.paymentFeignClient = paymentFeignClient;
+        this.userFeignClient = userFeignClient;
     }
 
     @Override
@@ -156,7 +165,6 @@ public class RideServiceImpl implements RideService {
         // Step 1: Conclude the trip
         ride.setStatus(RideStatus.COMPLETED);
         ride.setCompletedAt(LocalDateTime.now());
-        Ride updatedRide = rideRepository.save(ride);
 
         // Step 2: Inter-service call to release driver back to AVAILABLE state
         try {
@@ -165,7 +173,54 @@ public class RideServiceImpl implements RideService {
             System.err.println("Warning: Failed to reset driver status in driver-service: " + e.getMessage());
         }
 
-        return mapToDto(updatedRide, "Trip completed safely! Total fare is ₹" + updatedRide.getFare());
+        // Step 3: Inter-service call to settle trip fare between rider and driver digital wallets
+        try {
+            Long driverUserId = null;
+            try {
+                DriverDto driverDto = driverFeignClient.getDriverById(driverId);
+                if (driverDto != null && driverDto.getUserId() != null) {
+                    driverUserId = driverDto.getUserId();
+                }
+            } catch (Exception e) {
+                System.err.println("Notice: Could not fetch driver profile: " + e.getMessage());
+            }
+            if (driverUserId == null) {
+                driverUserId = driverId;
+            }
+
+            Long riderUserId = null;
+            try {
+                RiderDto riderDto = userFeignClient.getRiderById(ride.getRiderId());
+                if (riderDto != null && riderDto.getUserId() != null) {
+                    riderUserId = riderDto.getUserId();
+                }
+            } catch (Exception e) {
+                System.err.println("Notice: Could not fetch rider profile: " + e.getMessage());
+            }
+            if (riderUserId == null) {
+                riderUserId = ride.getRiderId();
+            }
+
+            SettleRideRequest settleReq = new SettleRideRequest(
+                    ride.getId(),
+                    riderUserId,
+                    driverUserId,
+                    ride.getFare()
+            );
+
+            SettlementResponseDto settlement = paymentFeignClient.settleRide(settleReq);
+            if (settlement != null && "SUCCESS".equalsIgnoreCase(settlement.getStatus())) {
+                ride.setPaymentStatus(PaymentStatus.COMPLETED);
+            } else {
+                ride.setPaymentStatus(PaymentStatus.FAILED);
+            }
+        } catch (Exception e) {
+            System.err.println("Warning: Ride fare settlement failed in payment-service: " + e.getMessage());
+            ride.setPaymentStatus(PaymentStatus.FAILED);
+        }
+
+        Ride updatedRide = rideRepository.save(ride);
+        return mapToDto(updatedRide, "Trip completed! Payment status: " + updatedRide.getPaymentStatus() + ". Total fare is ₹" + updatedRide.getFare());
     }
 
     @Override

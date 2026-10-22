@@ -40,6 +40,12 @@
 			<artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
 		</dependency>
 
+		<!-- Spring Cloud OpenFeign for Inter-Service Calls (e.g. to payment-service) -->
+		<dependency>
+			<groupId>org.springframework.cloud</groupId>
+			<artifactId>spring-cloud-starter-openfeign</artifactId>
+		</dependency>
+
 		<!-- In-Memory H2 Database for userdb -->
 		<dependency>
 			<groupId>com.h2database</groupId>

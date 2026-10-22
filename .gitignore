@@ -23,10 +23,9 @@
 target/
 **/target/
 
-# Ignore test directories and scripts
-**/src/test/
+# Ignore scripts and temp test dirs
 *.sh
-test/
+/test/
 
 # Eclipse IDE
 .classpath

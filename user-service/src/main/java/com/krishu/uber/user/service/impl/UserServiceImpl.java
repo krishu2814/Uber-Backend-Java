@@ -22,11 +22,15 @@ public class UserServiceImpl implements UserService {
 
     private final UserRepository userRepository;
     private final RiderRepository riderRepository;
+    private final com.krishu.uber.user.client.WalletFeignClient walletFeignClient;
 
     // Constructor injection
-    public UserServiceImpl(UserRepository userRepository, RiderRepository riderRepository) {
+    public UserServiceImpl(UserRepository userRepository,
+                           RiderRepository riderRepository,
+                           com.krishu.uber.user.client.WalletFeignClient walletFeignClient) {
         this.userRepository = userRepository;
         this.riderRepository = riderRepository;
+        this.walletFeignClient = walletFeignClient;
     }
 
     @Override
@@ -55,6 +59,13 @@ public class UserServiceImpl implements UserService {
         // Step 4: Create customer rider profile
         Rider rider = new Rider(savedUser, 5.0);
         Rider savedRider = riderRepository.save(rider);
+
+        // Step 5: Auto-initialize digital wallet with ₹100 welcome bonus in payment-service
+        try {
+            walletFeignClient.createWallet(savedUser.getId());
+        } catch (Exception e) {
+            System.err.println("Notice: Could not auto-initialize wallet via Feign: " + e.getMessage());
+        }
 
         return new AuthResponse(
                 savedUser.getId(),
@@ -89,6 +100,13 @@ public class UserServiceImpl implements UserService {
                 Role.DRIVER
         );
         User savedUser = userRepository.save(user);
+
+        // Step 4: Auto-initialize digital wallet with ₹100 welcome bonus in payment-service
+        try {
+            walletFeignClient.createWallet(savedUser.getId());
+        } catch (Exception e) {
+            System.err.println("Notice: Could not auto-initialize wallet via Feign: " + e.getMessage());
+        }
 
         return new AuthResponse(
                 savedUser.getId(),
@@ -153,6 +171,22 @@ public class UserServiceImpl implements UserService {
     public RiderDto getRiderByUserId(Long userId) {
         Rider rider = riderRepository.findByUserId(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("Rider profile not found for user ID: " + userId));
+
+        return new RiderDto(
+                rider.getId(),
+                rider.getUser().getId(),
+                rider.getUser().getName(),
+                rider.getUser().getEmail(),
+                rider.getUser().getPhone(),
+                rider.getRating()
+        );
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public RiderDto getRiderById(Long riderId) {
+        Rider rider = riderRepository.findById(riderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Rider profile not found with ID: " + riderId));
 
         return new RiderDto(
                 rider.getId(),

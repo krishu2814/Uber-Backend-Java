@@ -3,12 +3,14 @@ package com.krishu.uber.user;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
+import org.springframework.cloud.openfeign.EnableFeignClients;
 
 // User & Authentication Microservice
 // Manages riders, drivers, login accounts, and customer profiles.
 // Registers dynamically with Eureka Service Registry.
 @SpringBootApplication
 @EnableDiscoveryClient
+@EnableFeignClients
 public class UserServiceApplication {
 
     public static void main(String[] args) {
